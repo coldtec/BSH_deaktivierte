@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BSH-Verfügbarkeit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#eef1f4; --panel:#ffffff; --ink:#1c2733; --muted:#5d6b7a;
+  --line:#d3dae2; --accent:#1f5f7a; --accent-ink:#ffffff; --soft:#e3ecf1;
+  --warn:#9a5b12; --warn-bg:#fbf1e2; --ok:#2d6a4f;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,"Courier New",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#141a20; --panel:#1c242c; --ink:#e3e9ef; --muted:#93a1af;
+    --line:#2f3a45; --accent:#5fa8c6; --accent-ink:#0e1a20; --soft:#22303a;
+    --warn:#e0a85a; --warn-bg:#33281a; --ok:#7cc4a0;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#141a20; --panel:#1c242c; --ink:#e3e9ef; --muted:#93a1af;
+  --line:#2f3a45; --accent:#5fa8c6; --accent-ink:#0e1a20; --soft:#22303a;
+  --warn:#e0a85a; --warn-bg:#33281a; --ok:#7cc4a0;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans)}
+.wrap{max-width:900px;margin:0 auto;padding:28px 20px 48px}
+h1{font-size:1.35rem;font-weight:600;margin:0 0 18px;letter-spacing:-.01em}
+.tabs{display:flex;gap:4px;border-bottom:2px solid var(--line);margin-bottom:22px}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:500 0.98rem var(--sans);
+  padding:10px 16px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab:focus-visible,button:focus-visible,textarea:focus-visible,label.drop:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.panel[hidden]{display:none}
+p.hint{color:var(--muted);margin:0 0 14px;max-width:70ch}
+label.drop{display:block;border:2px dashed var(--line);border-radius:10px;background:var(--panel);
+  padding:26px 20px;text-align:center;cursor:pointer;color:var(--muted)}
+label.drop.over{border-color:var(--accent);background:var(--soft)}
+label.drop strong{color:var(--ink);font-weight:600}
+label.drop input{position:absolute;opacity:0;width:1px;height:1px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+@media (max-width:700px){.grid{grid-template-columns:1fr}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;min-width:0}
+.box header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.box h2{font-size:.95rem;font-weight:600;margin:0}
+.count{color:var(--muted);font-weight:400}
+textarea{width:100%;min-height:280px;resize:vertical;border:0;background:transparent;color:var(--ink);
+  font:14px/1.6 var(--mono);padding:12px;tab-size:16}
+textarea[readonly]{cursor:text}
+.btn{appearance:none;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);
+  font:500 .88rem var(--sans);padding:6px 12px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+.meta{margin-top:12px;color:var(--muted);font-size:.9rem}
+.notes{margin-top:18px;background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:12px 14px;font-size:.9rem}
+.notes[hidden]{display:none}
+.notes ul{margin:6px 0 0;padding-left:18px}
+.notes code{font-family:var(--mono)}
+.ok{color:var(--ok)}
+.err{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>BSH-Artikel &amp; Verfügbarkeit</h1>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="t1" aria-controls="p1" aria-selected="true">BSH-Artikel finden</button>
+    <button class="tab" role="tab" id="t2" aria-controls="p2" aria-selected="false">Verfügbarkeitsdaten bestimmen</button>
+  </div>
+
+  <!-- Reiter 1 -->
+  <section class="panel" id="p1" role="tabpanel" aria-labelledby="t1">
+    <p class="hint">CSV- oder Excel-Export laden. Übernommen werden nur Zeilen mit Status „Deaktiviert“ und Marke Bosch oder Siemens; ausgegeben wird die Nummer von BSH.</p>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".csv,.txt,.xlsx,.xls">
+      <strong>Datei hier ablegen</strong> oder klicken zum Auswählen
+      <div id="fileinfo" class="meta"></div>
+    </label>
+
+    <div class="box" style="margin-top:18px">
+      <header>
+        <h2>Modellnummern <span class="count" id="c1"></span></h2>
+        <button class="btn" id="copy1" disabled>Kopieren</button>
+      </header>
+      <textarea id="out1" readonly placeholder="Noch keine Datei geladen."></textarea>
+    </div>
+
+    <div class="notes" id="skip1" hidden></div>
+  </section>
+
+  <!-- Reiter 2 -->
+  <section class="panel" id="p2" role="tabpanel" aria-labelledby="t2" hidden>
+    <p class="hint">Antwort von BSH einfügen (Artikel und Kalenderwoche pro Zeile). Ausgegeben werden Artikelnummer, Modell und der Montag nach der Liefer-KW.</p>
+    <div class="grid">
+      <div class="box">
+        <header><h2>Antwort von BSH</h2><button class="btn ghost" id="clear2">Leeren</button></header>
+        <textarea id="in2" placeholder="KA93DAIEP 49&#10;ET601FNP1C 46&#10;GS58NAWDV 44/45"></textarea>
+      </div>
+      <div class="box">
+        <header>
+          <h2>Verfügbar ab <span class="count" id="c2"></span></h2>
+          <button class="btn" id="copy2" disabled>Kopieren</button>
+        </header>
+        <textarea id="out2" readonly placeholder="Modell → Artikelnummer → Datum&#10;Ergebnis erscheint hier."></textarea>
+      </div>
+    </div>
+    <div class="meta" id="today"></div>
+    <div class="notes" id="skip2" hidden></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  // ---------- Tabs ----------
+  const tabs = [...document.querySelectorAll('.tab')];
+  function show(id){
+    tabs.forEach(t=>{
+      const on = t.id===id;
+      t.setAttribute('aria-selected', on);
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+  }
+  tabs.forEach(t=>t.addEventListener('click',()=>show(t.id)));
+  if (location.hash==='#verfuegbarkeit') show('t2');
+
+  // ---------- Hilfen ----------
+  const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  async function copyText(text, btn){
+    try { await navigator.clipboard.writeText(text); }
+    catch(e){
+      const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta);
+      ta.select(); try{document.execCommand('copy');}catch(_){} ta.remove();
+    }
+    const old=btn.textContent; btn.textContent='Kopiert'; setTimeout(()=>btn.textContent=old,1400);
+  }
+
+  // ---------- Reiter 1: Datei einlesen ----------
+  const fileInput=document.getElementById('file'), drop=document.getElementById('drop');
+  const out1=document.getElementById('out1'), c1=document.getElementById('c1');
+  const copy1=document.getElementById('copy1'), skip1=document.getElementById('skip1');
+  const fileinfo=document.getElementById('fileinfo');
+  let artMap=null;
+  try{ artMap=JSON.parse(localStorage.getItem('bshArtMap')||'null'); }catch(e){ artMap=null; }
+
+  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+  drop.addEventListener('drop',e=>{ if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+  fileInput.addEventListener('change',()=>{ if(fileInput.files[0]) handleFile(fileInput.files[0]); fileInput.value=''; });
+
+  function decode(buf){
+    // Export kommt meist als Windows-1252; UTF-8 wird trotzdem erkannt
+    try { return new TextDecoder('utf-8',{fatal:true}).decode(buf).replace(/^\uFEFF/,''); }
+    catch(e){ return new TextDecoder('windows-1252').decode(buf); }
+  }
+
+  function parseCSV(text){
+    const first = text.split(/\r?\n/)[0] || '';
+    const sep = (first.split(';').length >= first.split(',').length) ? ';' : ',';
+    const rows=[]; let row=[], f='', q=false;
+    for (let i=0;i<text.length;i++){
+      const ch=text[i];
+      if(q){
+        if(ch==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; }
+        else f+=ch;
+      } else if(ch==='"') q=true;
+      else if(ch===sep){ row.push(f); f=''; }
+      else if(ch==='\n'){ row.push(f.replace(/\r$/,'')); rows.push(row); row=[]; f=''; }
+      else f+=ch;
+    }
+    if(f!==''||row.length){ row.push(f.replace(/\r$/,'')); rows.push(row); }
+    return rows.filter(r=>r.some(c=>c.trim()!==''));
+  }
+
+  async function handleFile(file){
+    fileinfo.textContent = file.name;
+    let rows;
+    try{
+      const buf = await file.arrayBuffer();
+      if (/\.xlsx?$/i.test(file.name)){
+        if (typeof XLSX==='undefined') throw new Error('Excel-Bibliothek nicht geladen. Datei als CSV speichern und erneut laden.');
+        const wb = XLSX.read(buf,{type:'array'});
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:'',raw:false});
+      } else {
+        rows = parseCSV(decode(buf));
+      }
+    } catch(e){
+      fileinfo.innerHTML = '<span class="err">'+esc(file.name)+': '+esc(e.message)+'</span>';
+      return;
+    }
+    process(rows, file.name);
+  }
+
+  function process(rows, name){
+    const head = (rows[0]||[]).map(h=>String(h).trim().toLowerCase());
+    let iStatus = head.indexOf('status');
+    let iName = head.findIndex(h=>h==='artikelname'||h==='bezeichnung'||h==='name');
+    let iArt = head.findIndex(h=>h==='artikelnummer'||h==='artikelnr'||h==='artikel-nr.'||h==='artnr');
+    const map={};
+    if (iStatus<0 || iName<0){
+      fileinfo.innerHTML = '<span class="err">'+esc(name)+': Spalten „Status“ und „Artikelname“ nicht gefunden.</span>';
+      return;
+    }
+    const found=[], skipped=[], seen=new Set();
+    let deact=0;
+    for (const r of rows.slice(1)){
+      const status=String(r[iStatus]||'').trim().toLowerCase();
+      if (status!=='deaktiviert') continue;
+      deact++;
+      const title=String(r[iName]||'').trim();
+      const m = title.match(/^(Bosch|Siemens)\s+(\S+)/i);
+      if (!m) continue;
+      const model = m[2];
+      // BSH-Modellnummern: mind. 6 Zeichen, Buchstaben + Ziffern (filtert z. B. Bosch-Werkzeuge wie „GOP 40-30“)
+      if (model.length>=6 && /[A-Z]/i.test(model) && /\d/.test(model) && /^[A-Z0-9]+$/i.test(model)){
+        const key=model.toUpperCase();
+        if(!seen.has(key)){ seen.add(key); found.push(key); }
+        const nr = iArt>=0 ? String(r[iArt]||'').trim() : '';
+        if(nr){ map[key]=map[key]||[]; if(!map[key].includes(nr)) map[key].push(nr); }
+      } else skipped.push(title);
+    }
+    out1.value = found.join('\n');
+    c1.textContent = found.length ? '('+found.length+')' : '';
+    copy1.disabled = !found.length;
+    fileinfo.innerHTML = '<span class="ok">'+esc(name)+'</span>: '+(rows.length-1)+' Zeilen, '+deact+' deaktiviert, '+found.length+' BSH-Artikel';
+    if (skipped.length){
+      skip1.hidden=false;
+      skip1.innerHTML = 'Bosch/Siemens, aber keine Hausgeräte-Modellnummer erkannt – bitte prüfen:<ul>'+
+        skipped.map(s=>'<li>'+esc(s)+'</li>').join('')+'</ul>';
+    } else skip1.hidden=true;
+    artMap={map, name, count:Object.keys(map).length};
+    try{ localStorage.setItem('bshArtMap', JSON.stringify(artMap)); }catch(e){}
+    updateInfo(); convert();
+  }
+  copy1.addEventListener('click',()=>copyText(out1.value,copy1));
+
+  // ---------- Reiter 2: KW -> Montag ----------
+  const in2=document.getElementById('in2'), out2=document.getElementById('out2');
+  const c2=document.getElementById('c2'), copy2=document.getElementById('copy2'), skip2=document.getElementById('skip2');
+
+  function isoWeek(d){
+    const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+    const day=t.getUTCDay()||7; t.setUTCDate(t.getUTCDate()+4-day);
+    const y=t.getUTCFullYear();
+    return {year:y, week:Math.ceil(((t-Date.UTC(y,0,1))/864e5+1)/7)};
+  }
+  function weeksInYear(y){ return isoWeek(new Date(y,11,28)).week; }
+  function mondayOfWeek(y,w){
+    const jan4=new Date(Date.UTC(y,0,4));
+    const day=jan4.getUTCDay()||7;
+    const mon=new Date(jan4); mon.setUTCDate(jan4.getUTCDate()-day+1+(w-1)*7);
+    return mon;
+  }
+  const fmt=d=>String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+'.'+d.getUTCFullYear();
+
+  const now=isoWeek(new Date());
+  function updateInfo(){
+    const el=document.getElementById('today');
+    let t='Heute: KW '+now.week+' / '+now.year+'. ';
+    t += artMap ? 'Artikelnummern aus „'+artMap.name+'“ ('+artMap.count+' Artikel).' : 'Noch keine Datei in Reiter 1 geladen, Artikelnummern bleiben leer.';
+    el.textContent=t;
+  }
+  updateInfo();
+  const nrOf = art => (artMap && artMap.map[art]) ? artMap.map[art].join(' / ') : '';
+
+  function convert(){
+    const lines=in2.value.split(/\r?\n/);
+    const res=[], bad=[], noNr=[];
+    const row=(art,date)=>{ const nr=nrOf(art); if(!nr) noNr.push(art); return art+'\t'+nr+'\t'+date; };
+    for (const raw of lines){
+      const line=raw.trim(); if(!line) continue;
+      const m=line.match(/^([A-Za-z0-9]+)[\s;,\t]+(.*)$/);
+      if(!m){ bad.push(line); continue; }
+      const art=m[1].toUpperCase();
+      const weeks=(m[2].match(/\d{1,2}(?!\d)/g)||[]).map(Number).filter(n=>n>=1&&n<=53);
+      if(!weeks.length){ res.push(row(art,'')); bad.push(line); continue; }
+      const w=Math.max(...weeks);           // bei 44/45 die spätere Woche
+      let y=now.year;
+      if (w<now.week) y++;                  // KW schon vorbei -> nächstes Jahr
+      if (w>weeksInYear(y)){ res.push(row(art,'')); bad.push(line); continue; }
+      const d=mondayOfWeek(y,w); d.setUTCDate(d.getUTCDate()+7); // Montag nach der Liefer-KW
+      res.push(row(art,fmt(d)));
+    }
+    out2.value=res.join('\n');
+    const n=res.filter(r=>!r.endsWith('\t')).length;
+    c2.textContent=res.length?'('+n+')':'';
+    copy2.disabled=!res.length;
+    let html='';
+    if(bad.length) html+='Keine gültige Kalenderwoche erkannt:<ul>'+bad.map(b=>'<li><code>'+esc(b)+'</code></li>').join('')+'</ul>';
+    if(noNr.length && artMap) html+=(html?'<br>':'')+'Keine Artikelnummer in der geladenen Datei:<ul>'+noNr.map(b=>'<li><code>'+esc(b)+'</code></li>').join('')+'</ul>';
+    skip2.hidden=!html; skip2.innerHTML=html;
+  }
+  in2.addEventListener('input',convert);
+  copy2.addEventListener('click',()=>copyText(out2.value,copy2));
+  document.getElementById('clear2').addEventListener('click',()=>{in2.value='';convert();in2.focus();});
+})();
+</script>
+</body>
+</html>
