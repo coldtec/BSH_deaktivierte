@@ -69,6 +69,17 @@ textarea[readonly]{cursor:text}
 .notes ul{margin:6px 0 0;padding-left:18px}
 .notes code{font-family:var(--mono)}
 .ok{color:var(--ok)}
+.tbl{min-height:280px;overflow-x:auto;padding:4px 6px 10px}
+.tbl .empty{color:var(--muted);padding:8px 6px;font-size:.92rem}
+.tbl table{width:100%;border-collapse:collapse;font:14px/1.4 var(--mono)}
+.tbl th{font:500 .78rem var(--sans);color:var(--muted);text-align:left;padding:6px 8px;white-space:nowrap}
+.tbl td{padding:2px;border-top:1px solid var(--line);white-space:nowrap}
+.tbl td.chk{width:1.6em;text-align:center;color:var(--ok);font-family:var(--sans)}
+.cp{appearance:none;border:0;background:none;color:inherit;font:inherit;display:block;width:100%;text-align:left;padding:6px;border-radius:5px;cursor:copy}
+.cp:hover{background:var(--soft)}
+.cp.flash{background:var(--accent);color:var(--accent-ink)}
+.tbl tr.done td{color:var(--muted)}
+.tbl .none{color:var(--muted);padding:6px}
 .err{color:var(--warn)}
 </style>
 </head>
@@ -83,7 +94,7 @@ textarea[readonly]{cursor:text}
 
   <!-- Reiter 1 -->
   <section class="panel" id="p1" role="tabpanel" aria-labelledby="t1">
-    <p class="hint">CSV- oder Excel-Export laden. Übernommen werden nur Zeilen mit Status „Deaktiviert“ und Marke Bosch oder Siemens; ausgegeben wird die Nummer von BSH.</p>
+    <p class="hint">CSV- oder Excel-Export laden. Übernommen werden nur Zeilen mit Status „Deaktiviert“ und Marke Bosch oder Siemens; ausgegeben wird die Modellnummer.</p>
     <label class="drop" id="drop">
       <input type="file" id="file" accept=".csv,.txt,.xlsx,.xls">
       <strong>Datei hier ablegen</strong> oder klicken zum Auswählen
@@ -103,18 +114,18 @@ textarea[readonly]{cursor:text}
 
   <!-- Reiter 2 -->
   <section class="panel" id="p2" role="tabpanel" aria-labelledby="t2" hidden>
-    <p class="hint">Antwort von BSH einfügen (Artikel und Kalenderwoche pro Zeile). Ausgegeben werden Artikelnummer, Modell und der Montag nach der Liefer-KW.</p>
+    <p class="hint">Antwort vom Lieferanten einfügen (Artikel und Kalenderwoche pro Zeile). Ausgegeben werden Modell, Artikelnummer und der Montag nach der Liefer-KW; bei „44/45“ zählt die spätere Woche. Liegt die KW vor der aktuellen Woche, gilt das nächste Jahr. Die Artikelnummern kommen aus der Datei, die in Reiter 1 geladen wurde.</p>
     <div class="grid">
       <div class="box">
-        <header><h2>Antwort von BSH</h2><button class="btn ghost" id="clear2">Leeren</button></header>
+        <header><h2>Lieferant</h2><button class="btn ghost" id="clear2">Leeren</button></header>
         <textarea id="in2" placeholder="KA93DAIEP 49&#10;ET601FNP1C 46&#10;GS58NAWDV 44/45"></textarea>
       </div>
       <div class="box">
         <header>
           <h2>Verfügbar ab <span class="count" id="c2"></span></h2>
-          <button class="btn" id="copy2" disabled>Kopieren</button>
+          <button class="btn ghost" id="copy2" disabled>Alle kopieren</button>
         </header>
-        <textarea id="out2" readonly placeholder="Modell → Artikelnummer → Datum&#10;Ergebnis erscheint hier."></textarea>
+        <div class="tbl" id="out2"><div class="empty">Ergebnis erscheint hier. Auf einen Wert klicken kopiert genau diesen.</div></div>
       </div>
     </div>
     <div class="meta" id="today"></div>
@@ -278,7 +289,7 @@ textarea[readonly]{cursor:text}
   function convert(){
     const lines=in2.value.split(/\r?\n/);
     const res=[], bad=[], noNr=[];
-    const row=(art,date)=>{ const nr=nrOf(art); if(!nr) noNr.push(art); return art+'\t'+nr+'\t'+date; };
+    const row=(art,date)=>{ const nr=nrOf(art); if(!nr) noNr.push(art); return [art,nr,date]; };
     for (const raw of lines){
       const line=raw.trim(); if(!line) continue;
       const m=line.match(/^([A-Za-z0-9]+)[\s;,\t]+(.*)$/);
@@ -293,8 +304,8 @@ textarea[readonly]{cursor:text}
       const d=mondayOfWeek(y,w); d.setUTCDate(d.getUTCDate()+7); // Montag nach der Liefer-KW
       res.push(row(art,fmt(d)));
     }
-    out2.value=res.join('\n');
-    const n=res.filter(r=>!r.endsWith('\t')).length;
+    lastRows=res; renderOut(res);
+    const n=res.filter(r=>r[2]).length;
     c2.textContent=res.length?'('+n+')':'';
     copy2.disabled=!res.length;
     let html='';
@@ -303,7 +314,25 @@ textarea[readonly]{cursor:text}
     skip2.hidden=!html; skip2.innerHTML=html;
   }
   in2.addEventListener('input',convert);
-  copy2.addEventListener('click',()=>copyText(out2.value,copy2));
+  copy2.addEventListener('click',()=>copyText(lastRows.map(r=>r.join('\t')).join('\n'),copy2));
+
+  // Einzelne Werte per Klick kopieren
+  let lastRows=[];
+  function renderOut(rows){
+    if(!rows.length){ out2.innerHTML='<div class="empty">Ergebnis erscheint hier. Auf einen Wert klicken kopiert genau diesen.</div>'; return; }
+    const cell=v=> v ? '<button class="cp" data-v="'+esc(v)+'" title="Klicken zum Kopieren">'+esc(v)+'</button>' : '<div class="none">–</div>';
+    out2.innerHTML='<table><thead><tr><th>Modell</th><th>Artikelnr.</th><th>Verfügbar ab</th><th></th></tr></thead><tbody>'+
+      rows.map(r=>'<tr><td>'+cell(r[0])+'</td><td>'+cell(r[1])+'</td><td>'+cell(r[2])+'</td><td class="chk"></td></tr>').join('')+
+      '</tbody></table>';
+  }
+  out2.addEventListener('click',async e=>{
+    const b=e.target.closest('.cp'); if(!b) return;
+    const v=b.dataset.v;
+    try{ await navigator.clipboard.writeText(v); }
+    catch(_){ const ta=document.createElement('textarea'); ta.value=v; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(__){} ta.remove(); }
+    b.classList.add('flash'); setTimeout(()=>b.classList.remove('flash'),500);
+    const tr=b.closest('tr'); tr.classList.add('done'); tr.querySelector('.chk').textContent='✓';
+  });
   document.getElementById('clear2').addEventListener('click',()=>{in2.value='';convert();in2.focus();});
 })();
 </script>
