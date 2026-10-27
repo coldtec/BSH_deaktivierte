@@ -178,21 +178,26 @@ textarea[readonly]{cursor:text}
   }
 
   function parseCSV(text){
-    const first = text.split(/\r?\n/)[0] || '';
-    const sep = (first.split(';').length >= first.split(',').length) ? ';' : ',';
+    text=text.replace(/^\uFEFF/,'');
+    const first = text.split(/\r\n|\n|\r/).find(x=>x.trim()) || '';
+    const candidates=[';',',','\t'];
+    const sep=candidates.sort((a,b)=>first.split(b).length-first.split(a).length)[0];
     const rows=[]; let row=[], f='', q=false;
-    for (let i=0;i<text.length;i++){
-      const ch=text[i];
-      if(q){
-        if(ch==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; }
-        else f+=ch;
-      } else if(ch==='"') q=true;
-      else if(ch===sep){ row.push(f); f=''; }
-      else if(ch==='\n'){ row.push(f.replace(/\r$/,'')); rows.push(row); row=[]; f=''; }
-      else f+=ch;
+    for(let i=0;i<text.length;i++){
+      const ch=text[i], next=text[i+1];
+      if(ch==='"'){
+        if(q && next==='"'){f+='"';i++;}
+        else if(q && (next===sep || next==='\r' || next==='\n' || next===undefined)) q=false;
+        else if(!q && f==='') q=true;
+        else f+='"'; // unmaskiertes Anführungszeichen innerhalb einer Bezeichnung
+      }else if(ch===sep && !q){row.push(f);f='';}
+      else if((ch==='\r'||ch==='\n') && !q){
+        if(ch==='\r'&&next==='\n') i++;
+        row.push(f);rows.push(row);row=[];f='';
+      }else f+=ch;
     }
-    if(f!==''||row.length){ row.push(f.replace(/\r$/,'')); rows.push(row); }
-    return rows.filter(r=>r.some(c=>c.trim()!==''));
+    if(f!==''||row.length){row.push(f);rows.push(row);}
+    return rows.filter(r=>r.some(c=>String(c).trim()!==''));
   }
 
   async function handleFile(file){
@@ -215,7 +220,7 @@ textarea[readonly]{cursor:text}
   }
 
   function process(rows, name){
-    const head = (rows[0]||[]).map(h=>String(h).trim().toLowerCase());
+    const head = (rows[0]||[]).map(h=>String(h).replace(/^\uFEFF/,'').replace(/\u00a0/g,' ').trim().toLowerCase());
     let iStatus = head.indexOf('status');
     let iName = head.findIndex(h=>h==='artikelname'||h==='bezeichnung'||h==='name');
     let iArt = head.findIndex(h=>h==='artikelnummer'||h==='artikelnr'||h==='artikel-nr.'||h==='artnr');
@@ -226,8 +231,10 @@ textarea[readonly]{cursor:text}
     }
     const found=[], skipped=[], seen=new Set();
     let deact=0;
+    const statusCounts={};
     for (const r of rows.slice(1)){
-      const status=String(r[iStatus]||'').trim().toLowerCase();
+      const status=String(r[iStatus]||'').replace(/\u00a0/g,' ').trim().toLowerCase();
+      statusCounts[status||'(leer)']=(statusCounts[status||'(leer)']||0)+1;
       if (status!=='deaktiviert') continue;
       deact++;
       const title=String(r[iName]||'').trim();
@@ -246,6 +253,8 @@ textarea[readonly]{cursor:text}
     c1.textContent = found.length ? '('+found.length+')' : '';
     copy1.disabled = !found.length;
     fileinfo.innerHTML = '<span class="ok">'+esc(name)+'</span>: '+(rows.length-1)+' Zeilen, '+deact+' deaktiviert, '+found.length+' BSH-Artikel';
+    const statusInfo=Object.entries(statusCounts).map(([k,v])=>esc(k)+': '+v).join(', ');
+    fileinfo.innerHTML += '<div>Erkannte Statuswerte: '+statusInfo+'</div>';
     if (skipped.length){
       skip1.hidden=false;
       skip1.innerHTML = 'Bosch/Siemens, aber keine Hausgeräte-Modellnummer erkannt – bitte prüfen:<ul>'+
